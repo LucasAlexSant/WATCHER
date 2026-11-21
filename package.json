@@ -1,54 +1,8 @@
 {
-  "name": "sos-live",
+  "name": "monitores-sos",
   "version": "0.1.0",
-  "description": "Relatos de ocorrências com Agora Conversational AI e central de operações",
   "private": true,
-  "engines": {
-    "node": ">=22"
-  },
-  "scripts": {
-    "dev": "node scripts/prepare-map.mjs && next dev",
-    "tunnel": "node scripts/tunnel.mjs",
-    "build": "node scripts/prepare-map.mjs && next build",
-    "start": "next start",
-    "lint": "eslint .",
-    "verify:api": "tsx scripts/verify-flow.ts",
-    "typecheck": "tsc --noEmit",
-    "verify": "pnpm run lint && pnpm run typecheck && pnpm run verify:api && pnpm run build"
-  },
-  "dependencies": {
-    "@electric-sql/pglite": "^0.5.17",
-    "@radix-ui/react-dropdown-menu": "^2.1.4",
-    "@radix-ui/react-slot": "^1.1.1",
-    "agora-agent-client-toolkit": "2.10.0",
-    "agora-agent-uikit": "1.1.0",
-    "agora-agents": "2.14.0",
-    "agora-rtc-react": "^2.5.1",
-    "agora-rtc-sdk-ng": "^4.24.3",
-    "agora-rtm": "^2.2.3",
-    "agora-token": "^2.0.5",
-    "autoprefixer": "^10.4.20",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.454.0",
-    "maplibre-gl": "^6.19.0",
-    "next": "^16.2.6",
-    "postgres": "^4.1.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7"
-  },
-  "devDependencies": {
-    "@types/node": "^22.10.6",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "eslint": "^9.39.4",
-    "eslint-config-next": "^16.2.2",
-    "postcss": "^8.5.1",
-    "tailwindcss": "^3.4.17",
-    "tsx": "^4.20.6",
-    "typescript": "^5.7.3",
-    "typescript-eslint": "^8.58.1"
-  }
+  "scripts": { "dev": "next dev", "build": "next build", "start": "next start" },
+  "dependencies": { "lucide-react": "^0.454.0", "next": "^16.2.6", "react": "^19.0.0", "react-dom": "^19.0.0" },
+  "devDependencies": { "@types/node": "^22.10.6", "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0", "typescript": "^5.7.3" }
 }
