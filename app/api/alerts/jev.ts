@@ -17,7 +17,7 @@ type JevResponse = {
   answers: Record<string, { type: string; choice: string; probabilities: Record<string, number> }>;
 };
 
-async function evaluate(key: string, state: object, questions: Record<string, Choice>): Promise<JevResponse> {
+export async function evaluate(key: string, state: object, questions: Record<string, Choice>): Promise<JevResponse> {
   const response = await fetch('https://api.typesafe.ai/v1/systemone', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
@@ -28,7 +28,7 @@ async function evaluate(key: string, state: object, questions: Record<string, Ch
   return response.json();
 }
 
-function choice<K extends string>(response: JevResponse, question: string, criteria: Record<K, string>) {
+export function choice<K extends string>(response: JevResponse, question: string, criteria: Record<K, string>) {
   const answer = response.answers?.[question];
   if (answer?.type !== 'choice' || !Object.hasOwn(criteria, answer.choice)) throw new Error('Invalid Jev choice');
   const label = answer.choice as K;

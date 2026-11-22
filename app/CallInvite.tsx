@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Copy, Phone } from 'lucide-react';
+import { Copy, Phone, Radio } from 'lucide-react';
 
 type Invite = { url: string; expiresAt: number; recipient: { name: string; assigned: boolean } };
 
@@ -10,8 +10,10 @@ export function CallInvite({ incidentId }: { incidentId?: number }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [mode, setMode] = useState<'operations' | 'briefing'>('operations');
 
-  async function create() {
+  async function create(nextMode: typeof mode) {
+    setMode(nextMode);
     setInvite(undefined);
     setCopied(false);
     setError('');
@@ -19,7 +21,7 @@ export function CallInvite({ incidentId }: { incidentId?: number }) {
     try {
       const response = await fetch('/api/calls', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'invite', incidentId }),
+        body: JSON.stringify({ action: 'invite', incidentId, mode: nextMode }),
         signal: AbortSignal.timeout(25000),
       });
       const result = await response.json();
@@ -43,11 +45,16 @@ export function CallInvite({ incidentId }: { incidentId?: number }) {
   }
 
   return <div className="call-invite">
-    <button className="button secondary" onClick={() => void create()} disabled={busy}>
+    <div className="invite-actions">
+    <button className="button secondary" onClick={() => void create('operations')} disabled={busy}>
       <Phone size={18} /> {busy ? 'Gerando link…' : incidentId ? 'Gerar acionamento' : 'Acionar último incidente PIX'}
     </button>
+    <button className="button secondary" onClick={() => void create('briefing')} disabled={busy}>
+      <Radio size={17} /> Link para o CTO
+    </button>
+    </div>
     {invite && <div className="invite-detail">
-      <p><b>{invite.recipient.name}</b> · {invite.recipient.assigned ? 'Responsável cadastrado' : 'Sem engenheiro individual cadastrado'}.</p>
+      <p><b>{invite.recipient.name}</b> · {mode === 'briefing' ? 'Acesso de consulta' : invite.recipient.assigned ? 'Responsável cadastrado' : 'Sem engenheiro individual cadastrado'}.</p>
       <p>Link válido até {new Date(invite.expiresAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.</p>
       <input aria-label="Link para atender a chamada" value={invite.url} readOnly onFocus={event => event.currentTarget.select()} />
       <div className="invite-actions">

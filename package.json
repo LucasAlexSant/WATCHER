@@ -8,8 +8,10 @@
     "start": "next start"
   },
   "dependencies": {
+    "agora-agent-client-toolkit": "2.10.0",
     "agora-agents": "3.0.0-alpha.4",
     "agora-rtc-sdk-ng": "4.24.3",
+    "agora-rtm": "2.3.0",
     "lucide-react": "^0.454.0",
     "next": "^16.2.6",
     "react": "^19.0.0",
