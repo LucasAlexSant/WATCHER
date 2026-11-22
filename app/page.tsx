@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { CallInvite } from './CallInvite';
+import type { Candidate, Comparison } from './api/alerts/candidates';
 import {
   Activity, ArrowLeftRight, Bell, CheckCircle2, CreditCard, Database,
   Landmark, Radio, Server, Shield, Siren, TriangleAlert, Zap,
@@ -29,6 +31,21 @@ const monitors: Monitor[] = [
 ];
 
 const labels: Record<Status, string> = { normal: 'Operacional', warning: 'Degradado', critical: 'Crítico' };
+type IncidentResult = { status: 'recorded'; id: number; priority: string; source: string; comparisons: Comparison[] };
+type AlertResult = IncidentResult | { status: 'started'; startedAt: string } | { status: 'pending'; candidates: Candidate[]; reason: string; retryIn: number } | { status: 'stopped' };
+
+async function syncAlert(action: 'start' | 'check' | 'stop', id: string): Promise<AlertResult> {
+  const response = await fetch('/api/alerts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, id }),
+    signal: AbortSignal.timeout(90000),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error ?? 'Falha na sincronização com o Supabase.');
+  return result;
+}
+
 const clock = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 function reading(monitor: Monitor, tick: number, active: boolean) {
@@ -57,6 +74,14 @@ function Sparkline({ monitor, points }: { monitor: Monitor; points: number[] }) 
 
 export default function Page() {
   const [state, setState] = useState(() => ({ samples: initialSamples(), tick: 0, active: false, updatedAt: 0, incidentAt: 0 }));
+  const [alertId, setAlertId] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [incident, setIncident] = useState<IncidentResult>();
+  const [problem, setProblem] = useState('');
+  const [pending, setPending] = useState<{ candidates: Candidate[]; reason: string }>();
+  const [retryAt, setRetryAt] = useState(0);
+
   useEffect(() => {
     const timer = window.setInterval(() => {
       const now = Date.now();
@@ -65,12 +90,49 @@ export default function Page() {
     return () => window.clearInterval(timer);
   }, []);
 
-  function toggleIncident() {
-    const now = Date.now();
-    setState(previous => ({
-      ...advance(previous, !previous.active, now),
-      incidentAt: previous.active ? 0 : now,
-    }));
+  useEffect(() => {
+    if (!state.active || !alertId || incident || busy || checking || state.updatedAt < retryAt) return;
+    setChecking(true);
+    syncAlert('check', alertId).then(result => {
+      if (result.status === 'recorded') {
+        setIncident(result);
+        setPending(undefined);
+        setProblem('');
+      } else if (result.status === 'pending') {
+        setPending({ candidates: result.candidates, reason: result.reason });
+        setProblem('');
+        setRetryAt(Date.now() + result.retryIn * 1000);
+      } else {
+        const now = Date.now();
+        setAlertId(undefined);
+        setState(previous => ({ ...advance(previous, false, now), incidentAt: 0 }));
+      }
+    }).catch(error => {
+      setProblem(error instanceof Error ? error.message : 'Falha na triagem.');
+      setRetryAt(Date.now() + 10000);
+    }).finally(() => setChecking(false));
+  }, [alertId, busy, checking, incident, retryAt, state.active, state.updatedAt]);
+
+  async function toggleIncident() {
+    setBusy(true);
+    setProblem('');
+    const id = alertId ?? crypto.randomUUID();
+    setAlertId(id);
+    try {
+      const result = await syncAlert(state.active ? 'stop' : 'start', id);
+      const now = Date.now();
+      const startedAt = result.status === 'started' ? Date.parse(result.startedAt) : 0;
+      const active = result.status === 'started';
+      setState(previous => ({ ...advance(previous, active, now), incidentAt: active ? startedAt : 0 }));
+      setIncident(undefined);
+      setPending(undefined);
+      setRetryAt(0);
+      if (!active) setAlertId(undefined);
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : 'Falha ao sincronizar a simulação.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   function advance(previous: typeof state, active: boolean, now: number): typeof state {
@@ -100,10 +162,12 @@ export default function Page() {
           <h1 id="page-title">Monitores</h1>
           <p className="subtitle">Acompanhe a saúde dos serviços de pagamentos e contas.</p>
         </div>
-        <button className={state.active ? 'button secondary' : 'button primary'} onClick={toggleIncident}>
+        <div className="heading-actions">
+        <button className={state.active ? 'button secondary' : 'button primary'} onClick={toggleIncident} disabled={busy || checking}>
           {state.active ? <CheckCircle2 size={19} /> : <Siren size={19} />}
           {state.active ? 'Encerrar simulação' : 'Simular incidente'}
         </button>
+        </div>
       </section>
 
       <dl className="summary" aria-label="Resumo dos serviços">
@@ -116,11 +180,38 @@ export default function Page() {
       <div className={state.active ? 'incident active' : 'incident'} role="status">
         {state.active ? <TriangleAlert size={21} /> : <CheckCircle2 size={21} />}
         <div>
-          <strong>{state.active ? 'Incidente simulado no PIX' : 'Todos os serviços operacionais'}</strong>
+          <strong>{state.active ? 'PIX com falha há 3 minutos (simulação)' : 'Todos os serviços operacionais'}</strong>
           <p>{state.active ? 'Falhas na confirmação de transferências afetam o gateway e a conciliação.' : 'Nenhum incidente ativo.'}</p>
         </div>
         {state.incidentAt > 0 && <time dateTime={new Date(state.incidentAt).toISOString()}>{clock.format(state.incidentAt)}</time>}
       </div>
+
+      {(state.active || problem) && <aside className="triage" aria-live="polite">
+        <strong>Triagem · últimos 15 minutos</strong>
+        {incident ? <p>
+          Incidente #{incident.id} salvo no Supabase · Prioridade {incident.priority}
+          {incident.source === 'jev' ? ' · Jev' : ' · registro anterior'}.
+        </p> : state.active ? <p>
+          {pending?.reason ?? 'Consultando o histórico e comparando os eventos no Jev.'}
+        </p> : null}
+        {(incident?.comparisons.length || pending?.candidates.length) ? (
+          <ol className="triage-events" aria-label="Ocorrências consultadas">
+            {(incident?.comparisons.length ? incident.comparisons : pending?.candidates ?? []).map((event: Candidate | Comparison) => (
+              <li key={`${event.source}:${event.at}:${event.title}:${event.signal}`}>
+                <div><time dateTime={event.at}>{clock.format(new Date(event.at))}</time> · <b>{event.title}</b> · {event.source === 'demo' ? 'Demonstração' : 'Supabase'}</div>
+                <p>{event.signal}</p>
+                {'label' in event && <span className={`correlation ${event.label}`}>
+                  {{ related: 'Correlacionado', unrelated: 'Descartado', uncertain: 'Inconclusivo' }[event.label]}
+                  {' · '}{Math.round(event.probability * 100)}%
+                </span>}
+              </li>
+            ))}
+          </ol>
+        ) : null}
+        {problem && <p className="red">{problem}{state.active && !incident ? ' O painel tentará novamente.' : ''}</p>}
+      </aside>}
+
+      {(!state.active || incident) && <CallInvite key={incident?.id ?? 'latest'} incidentId={incident?.id} />}
 
       <section aria-labelledby="service-title">
         <div className="section-heading">
@@ -150,7 +241,7 @@ export default function Page() {
       </section>
 
       <footer>
-        <span>Dados simulados no navegador</span>
+        <span>Métricas simuladas · incidentes registrados no Supabase</span>
         <span>{state.updatedAt ? `Última leitura às ${clock.format(state.updatedAt)}` : 'Aguardando a próxima leitura'}</span>
       </footer>
     </main>

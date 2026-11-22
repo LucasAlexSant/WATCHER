@@ -99,3 +99,26 @@ footer { align-items: center; padding-top: 17px; color: var(--subtle); font-size
   .incident time { display: none; }
   footer { align-items: flex-start; flex-direction: column; gap: 5px; }
 }
+.triage { margin: -12px 0 24px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.triage p { margin-top: 4px; font-size: .875rem; line-height: 1.5; }
+.triage p:not(.red) { color: var(--subtle); }
+.button:disabled { opacity: .65; cursor: wait; }
+.triage-events { list-style: none; margin: 10px 0 0; padding: 0; }
+.triage-events li { border-top: 1px solid var(--line); padding: 8px 0; font-size: .875rem; }
+.triage-events time { color: var(--subtle); font-family: var(--font-mono); }
+.correlation { display: inline-block; margin-top: 4px; color: var(--subtle); }
+.correlation.related { color: var(--green); }
+.correlation.uncertain { color: var(--accent); }
+.call-invite { display: grid; justify-items: start; gap: 9px; margin-block: 0 22px; }
+.invite-detail { display: grid; gap: 9px; width: min(100%, 540px); padding: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.invite-detail p, .call-hint { color: var(--subtle); font-size: .875rem; }
+.invite-detail input { min-width: 0; width: 100%; padding: 9px; border: 1px solid var(--control); border-radius: 6px; color: var(--ink); background: var(--field); font: .8rem var(--font-mono); }
+.invite-actions, .call-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.call-wrap { width: min(calc(100% - 32px), 480px); margin: clamp(28px, 10vh, 94px) auto 30px; }
+.call-card { display: grid; justify-items: center; gap: 10px; padding: clamp(19px, 5vw, 30px); text-align: center; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.call-card h1 { font-size: 2rem; margin: 0; }
+.call-avatar { display: grid; place-items: center; width: 62px; height: 62px; margin-bottom: 5px; border: 1px solid var(--control); border-radius: 50%; color: var(--accent); background: var(--raised); }
+.call-brief { display: grid; gap: 5px; width: 100%; margin-block: 7px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); }
+.call-brief p { color: var(--subtle); font-size: .875rem; }
+.call-actions:empty { display: none; }
+@media (max-width: 610px) { .heading-actions .button { width: 100%; } }
