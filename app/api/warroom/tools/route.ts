@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { cleanText, findRoomIncident, recordRoomEvent, roomContext } from '../store';
+import { briefingContext, cleanText, findRoomIncident, recordRoomEvent, roomContext } from '../store';
 import { readToolGrant } from '../tools';
 import { analyzeChanges, shareChange } from '../changes';
 
@@ -11,6 +11,7 @@ export async function POST(request: Request) {
   try {
     const incident = await findRoomIncident(grant.incidentId);
     if (!incident) return Response.json({ error: 'Incidente não encontrado.' }, { status: 404 });
+    if (grant.operation === 'executive') return Response.json(briefingContext(await roomContext(incident)));
     if (grant.operation === 'context') return Response.json(await roomContext(incident));
     if (grant.operation === 'changes') return Response.json({ changes: await analyzeChanges(incident) });
     if (grant.operation === 'shareChange') {

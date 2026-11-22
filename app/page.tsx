@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CallInvite } from './CallInvite';
+import { callRequest, reserveCallTab, type CallInvitation } from './call-client';
+import { SiteHeader } from './SiteHeader';
 import type { Candidate, Comparison } from './api/alerts/candidates';
 import {
   Activity, ArrowLeftRight, Bell, CheckCircle2, CreditCard, Database,
-  Landmark, Radio, Server, Shield, Siren, TriangleAlert, Zap,
+  Landmark, Phone, Radio, Server, Siren, TriangleAlert, Zap,
 } from 'lucide-react';
 
 type Status = 'normal' | 'warning' | 'critical';
@@ -81,6 +83,37 @@ export default function Page() {
   const [problem, setProblem] = useState('');
   const [pending, setPending] = useState<{ candidates: Candidate[]; reason: string }>();
   const [retryAt, setRetryAt] = useState(0);
+  const [autoInvite, setAutoInvite] = useState<CallInvitation>();
+  const [callNotice, setCallNotice] = useState('');
+  const reserved = useRef<{ alertId: string; tab: Window | null } | null>(null);
+
+  function closeWaitingTab() {
+    const request = reserved.current;
+    reserved.current = null;
+    if (request?.tab && !request.tab.closed) request.tab.close();
+  }
+
+  async function openIncidentCall(id: string, incidentId: number) {
+    const request = reserved.current;
+    if (!request || request.alertId !== id) return;
+    setCallNotice('Preparando o acionamento do plantão.');
+    try {
+      const invitation = await callRequest<CallInvitation>({ action: 'invite', incidentId, mode: 'operations' });
+      if (reserved.current !== request) return;
+      setAutoInvite(invitation);
+      if (request.tab && !request.tab.closed) {
+        request.tab.location.replace(invitation.url);
+        setCallNotice('Chamada do plantão aberta em outra guia.');
+      } else {
+        setCallNotice('A guia automática não está disponível. Abra a chamada pelo botão abaixo.');
+      }
+      reserved.current = null;
+    } catch {
+      if (reserved.current !== request) return;
+      closeWaitingTab();
+      setCallNotice('Não foi possível abrir a chamada automaticamente. Use Gerar acionamento.');
+    }
+  }
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -98,11 +131,14 @@ export default function Page() {
         setIncident(result);
         setPending(undefined);
         setProblem('');
+        void openIncidentCall(alertId, result.id);
       } else if (result.status === 'pending') {
         setPending({ candidates: result.candidates, reason: result.reason });
         setProblem('');
         setRetryAt(Date.now() + result.retryIn * 1000);
       } else {
+        closeWaitingTab();
+        setCallNotice('');
         const now = Date.now();
         setAlertId(undefined);
         setState(previous => ({ ...advance(previous, false, now), incidentAt: 0 }));
@@ -117,6 +153,12 @@ export default function Page() {
     setBusy(true);
     setProblem('');
     const id = alertId ?? crypto.randomUUID();
+    if (!state.active) {
+      closeWaitingTab();
+      reserved.current = { alertId: id, tab: reserveCallTab() };
+      setAutoInvite(undefined);
+      setCallNotice('A chamada será aberta após a triagem.');
+    }
     setAlertId(id);
     try {
       const result = await syncAlert(state.active ? 'stop' : 'start', id);
@@ -127,8 +169,17 @@ export default function Page() {
       setIncident(undefined);
       setPending(undefined);
       setRetryAt(0);
-      if (!active) setAlertId(undefined);
+      if (!active) {
+        closeWaitingTab();
+        setCallNotice('');
+        setAutoInvite(undefined);
+        setAlertId(undefined);
+      }
     } catch (error) {
+      if (!state.active) {
+        closeWaitingTab();
+        setCallNotice('');
+      }
       setProblem(error instanceof Error ? error.message : 'Falha ao sincronizar a simulação.');
     } finally {
       setBusy(false);
@@ -147,13 +198,7 @@ export default function Page() {
   const pixApproval = state.samples[0].at(-1)!.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
   return <>
-    <header className="site-header">
-      <div className="header-inner">
-        <span className="brand"><Activity size={22} /> SOS Live</span>
-        <nav aria-label="Navegação principal"><a href="/" aria-current="page"><Radio size={16} /> Monitores</a></nav>
-        <span className="demo-label"><Shield size={16} /> Demonstração</span>
-      </div>
-    </header>
+    <SiteHeader current="monitors" />
 
     <main className="content">
       <section className="heading" aria-labelledby="page-title">
@@ -211,6 +256,12 @@ export default function Page() {
         {problem && <p className="red">{problem}{state.active && !incident ? ' O painel tentará novamente.' : ''}</p>}
       </aside>}
 
+      {(callNotice || autoInvite) && <div className="auto-call">
+        <p role="status">{callNotice}</p>
+        {autoInvite && <a className="button secondary compact" href={autoInvite.url} target="_blank" rel="noopener noreferrer">
+          <Phone size={16} /> Abrir chamada do plantão
+        </a>}
+      </div>}
       {(!state.active || incident) && <CallInvite key={incident?.id ?? 'latest'} incidentId={incident?.id} />}
 
       <section aria-labelledby="service-title">

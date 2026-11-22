@@ -1,4 +1,4 @@
-# SOS Live · Monitores
+# WATCHER · Monitores
 
 Painel local com seis monitores de pagamentos e contas. As métricas são simuladas no navegador, atualizadas a cada dois segundos.
 
@@ -39,7 +39,7 @@ O link é assinado, vale por 30 minutos e abre uma chamada em outra aba. Ao **At
 
 O servidor precisa de `NEXT_PUBLIC_AGORA_APP_ID`, `NEXT_AGORA_APP_CERTIFICATE` e `CALL_SIGNING_SECRET` (segredo aleatório com pelo menos 32 caracteres). Por padrão, o link aponta para o localhost. Para outro dispositivo, disponibilize a página e a API da chamada sob HTTPS e configure o mesmo endereço em `CALL_PUBLIC_ORIGIN`.
 
-A aba da chamada mostra a transcrição ao vivo das duas vozes usando o mesmo Agora Voice AI Toolkit e RTM do demo. A transcrição fica na aba até recarregar ou fechar a página. No link operacional, apenas as falas concluídas do engenheiro são registradas no histórico como relatos. As falas do assistente e do link de consulta ficam na aba.
+A aba da chamada mostra a transcrição ao vivo das duas vozes usando o mesmo Agora Voice AI Toolkit e RTM do demo. A transcrição fica na aba até recarregar ou fechar a página. No link operacional, as falas concluídas do engenheiro e do assistente ficam no histórico com autoria separada. O link de consulta do CTO não grava a conversa.
 
 ## War room e pós-mortem
 
@@ -51,6 +51,20 @@ A aba da chamada mostra a transcrição ao vivo das duas vozes usando o mesmo Ag
 
 ### Resumos periódicos e mudanças
 
-- Em chamadas operacionais, a cada dois minutos o painel pede à LLM da Agora um breve resumo falado. Quando a resposta completa chega pela transcrição, o servidor grava estado, planejamento e horário em `incident_events`. A interface indica quando um resumo ficou pendente. O link do CTO continua somente para consulta.
-- A tabela reúne cinco GMUDs fictícias e os metadados de deploys relevantes do Supabase na janela anterior ao alerta. O Jev classifica as mudanças, ordenadas pela probabilidade de correlação. A análise e os cards compartilhados são guardados no incidente para quem entrar depois.
-- A área da transcrição inclui cards que abrem um popover. Use **Compartilhar** na tabela para destacar uma GMUD na transcrição. Com a origem HTTPS configurada, as tools da Agora também podem analisar e compartilhar essas mudanças durante a chamada.
+- Em chamadas operacionais, o NeuraLake consolida em segundo plano os relatos novos a cada dois minutos e após o encerramento. Use **Atualizar resumo** para consolidar imediatamente. O Supabase guarda o horário, o impacto, as decisões, os próximos passos, responsáveis e pendências para o pós-mortem. Relatos já consolidados não são reenviados.
+- A análise reúne cinco GMUDs fictícias e os metadados de deploys relevantes do Supabase na janela anterior ao alerta. O Jev classifica as mudanças, ordenadas pela probabilidade de correlação. A análise e os cards compartilhados são guardados no incidente.
+- A transcrição inclui cards de incidentes e mudanças com detalhes. Com a origem HTTPS configurada, as ferramentas da Agora também podem analisar e compartilhar mudanças durante a chamada.
+
+## NeuraLake
+
+Configure `NEURALAKE_API_KEY` no `.env.local` do servidor. A consolidação usa a capacidade `text` e registra versões em `incident_events`. O agente operacional continua usando o modelo de voz da Agora. O **Link para o CTO** inicia um copiloto independente e somente de consulta. Se o NeuraLake falhar, o último estado salvo fica disponível e os relatos pendentes podem ser processados na próxima tentativa.
+
+## Lista de war rooms
+
+A aba **War rooms** lista os incidentes simulados em andamento e resolvidos, com prioridade, último resumo do NeuraLake e próximo passo. **Acompanhar com agente do CTO** abre o briefing em outra guia. O painel local gera um link de consulta da lista que expira em uma hora. Para abrir em outro dispositivo, configure `CALL_PUBLIC_ORIGIN` com a origem HTTPS acessível ao destinatário.
+
+**Simular incidente** reserva uma guia no clique e abre a chamada do plantão quando a triagem termina. Use **Atender** para habilitar a voz. Se o navegador bloquear a abertura automática, use **Abrir chamada do plantão** no painel.
+
+Na chamada, a transcrição ocupa a área principal. Peça um contexto breve e, se quiser aprofundar, pergunte quais GMUDs podem estar relacionadas. O agente pode sugerir avaliar um rollback, mas a decisão e a execução ficam com o plantão. Dizer **vamos terminar** encerra a chamada depois da despedida. O NeuraLake consolida os relatos após uma pausa curta e após o desligamento. A conclusão do rollback é registrada como relato do plantão, e a recuperação depende de confirmação.
+
+O resumo é cumulativo. O NeuraLake recebe a última versão e acrescenta os trechos novos da chamada. Achados, decisões e ações anteriores continuam no histórico quando entram falas sem informação nova. O estágio do rollback relatado pelo plantão aparece separado do diagnóstico e pode atualizar o agente do CTO antes da próxima consolidação.

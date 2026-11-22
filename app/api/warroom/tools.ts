@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { LlmTool } from 'agora-agents';
 
 export type RoomMode = 'operations' | 'briefing';
-type Operation = 'context' | 'checkpoint' | 'changes' | 'shareChange';
+type Operation = 'executive' | 'context' | 'checkpoint' | 'changes' | 'shareChange';
 type ToolGrant = { incidentId: number; callId: string; expiresAt: number; operation: Operation };
 
 function sign(payload: string) {
@@ -53,6 +53,16 @@ export function roomTools(incidentId: number, callId: string, mode: RoomMode, ex
     timeout_ms: operation === "changes" || operation === "shareChange" ? 35000 : 15000,
   });
 
+  if (mode === 'briefing') return [{
+    type: 'function',
+    function: {
+      name: 'consultarBriefingExecutivo',
+      description: 'Lê o estado mais recente consolidado pelo NeuraLake deste incidente: impacto, horário da última atualização, decisões, responsáveis, próximas ações, pendências e GMUDs suspeitas. Consulte ao responder cada pergunta factual do CTO sobre o incidente.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+    server: endpoint('executive', { request: 'executive' }),
+  }];
+
   const tools: LlmTool[] = [{
     type: 'function',
     function: {
@@ -62,7 +72,7 @@ export function roomTools(incidentId: number, callId: string, mode: RoomMode, ex
     },
     server: endpoint('context', { request: 'context' }),
   }];
-  if (mode === 'operations') tools.push({
+  tools.push({
     type: 'function',
     function: {
       name: 'analisarMudancasWarRoom',

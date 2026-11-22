@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, GitCompareArrows } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { roomContext } from '../api/warroom/store';
 import type { ChangeCandidate, ChangeReview } from '../api/warroom/change-types';
-import { EvidenceCard } from './EvidenceCard';
+import { rollbackLabels } from '../api/warroom/rollback';
 
 export type RoomContext = Awaited<ReturnType<typeof roomContext>>;
 
@@ -27,50 +27,22 @@ export function ChangeDetails({ change }: { change: ChangeCandidate | ChangeRevi
   </>;
 }
 
-export function ChangesPanel({ room, status, busy, canEdit, onAction }: {
-  room: RoomContext;
-  status: string;
-  busy: boolean;
-  canEdit: boolean;
-  onAction: (id?: string) => void;
+export function WarRoomPanel({ room, saveStatus, recapStatus, onSummarize, summaryBusy }: {
+  room?: RoomContext; saveStatus: string; recapStatus: string; onSummarize?: () => void; summaryBusy: boolean;
 }) {
-  const rows: (ChangeCandidate | ChangeReview)[] = room.changes.length ? room.changes : room.changeCandidates;
-  const strongest = room.changes.find(change => change.label === 'related')?.id;
-  return <section className="room-context changes-panel" aria-labelledby="changes-heading">
-    <header>
-      <div><h2 id="changes-heading">Mudanças (GMUDs)</h2><p>Janela de 15 minutos antes do alerta. Suspeitas primeiro após a análise do Jev.</p></div>
-      {canEdit && <button className="button secondary" disabled={busy} onClick={() => onAction()}>
-        <GitCompareArrows size={17} /> {busy ? 'Processando…' : 'Analisar mudanças'}
-      </button>}
-    </header>
-    {status && <p className="room-detail" role="status">{status}</p>}
-    <div className="changes-scroll" tabIndex={0} aria-label="Tabela de mudanças">
-      <table className="changes-table">
-        <thead><tr><th scope="col">Mudança</th><th scope="col">Horário</th><th scope="col">Serviço</th><th scope="col">Correlação</th>{canEdit && <th scope="col">Card</th>}</tr></thead>
-        <tbody>{rows.map(change => <tr key={change.id} className={change.id === strongest ? 'strongest' : undefined}>
-          <td><EvidenceCard title={change.title} caption={`${change.id} · ${change.source === 'demo' ? 'Demo' : 'Supabase'}`}><ChangeDetails change={change} /></EvidenceCard></td>
-          <td><time dateTime={change.at}>{roomTime(change.at)}</time></td>
-          <td>{change.service}</td>
-          <td>{'label' in change ? <span className={`change-label ${change.label}`}>
-            {{ related: 'Suspeita', unrelated: 'Descartada', uncertain: 'Inconclusiva' }[change.label]} · {Math.round(change.probability * 100)}%
-          </span> : 'Aguardando análise'}</td>
-          {canEdit && <td>{room.sharedChanges.includes(change.id) ? 'Compartilhado' :
-            <button className="button secondary compact" disabled={busy || !room.changes.length} onClick={() => onAction(change.id)}>Compartilhar</button>}</td>}
-        </tr>)}</tbody>
-      </table>
-    </div>
-  </section>;
-}
-
-export function WarRoomPanel({ room, saveStatus, recapStatus }: { room?: RoomContext; saveStatus: string; recapStatus: string }) {
   const [minimized, setMinimized] = useState(false);
   if (!room) return null;
   return <section className="room-context" aria-labelledby="room-heading">
     <header>
       <h2 id="room-heading">Estado do war room</h2>
+      <div className="invite-actions">
+      {onSummarize && !minimized && <button className="button secondary compact" disabled={summaryBusy} onClick={onSummarize}>
+        {summaryBusy ? 'Atualizando…' : 'Atualizar resumo'}
+      </button>}
       <button className="button secondary compact" aria-expanded={!minimized} aria-controls="room-current-state" onClick={() => setMinimized(value => !value)}>
         {minimized ? <ChevronDown size={16} /> : <ChevronUp size={16} />} {minimized ? 'Expandir' : 'Minimizar'}
       </button>
+      </div>
     </header>
     {minimized && <p className="room-detail">{room.checkpoint ? `Último resumo às ${roomTime(room.checkpoint.at)}` : 'Ainda sem resumo salvo'}</p>}
     <div id="room-current-state" hidden={minimized}>
@@ -91,13 +63,38 @@ export function WarRoomPanel({ room, saveStatus, recapStatus }: { room?: RoomCon
         </div>
         <div>
           <h3>Último contexto salvo</h3>
+          {room.rollback && <div className="room-checkpoint">
+            <p><time dateTime={room.rollback.reportedAt}>{roomTime(room.rollback.reportedAt)}</time> · Relato do plantão</p>
+            <p><b>{rollbackLabels[room.rollback.stage]}</b>{room.rollback.changeId && ` · ${room.rollback.changeId}`}</p>
+          </div>}
           {room.checkpoint ? <div className="room-checkpoint">
-            <p><time dateTime={room.checkpoint.at}>{roomTime(room.checkpoint.at)}</time> · {room.checkpoint.cadence === 'periodic' ? 'Resumo periódico' : 'Resumo do plantão'}</p>
+            <p><time dateTime={room.checkpoint.at}>{roomTime(room.checkpoint.at)}</time> · {room.checkpoint.provider === 'neuralake' ? 'Consolidado por NeuraLake' : 'Resumo do plantão'}</p>
             <p>{room.checkpoint.summary}</p>
+            {room.checkpoint.consolidated && <div className="room-consolidated">
+              <p><b>Situação</b> {room.checkpoint.consolidated.status}</p>
+              {room.checkpoint.consolidated.impact && <p><b>Impacto</b> {room.checkpoint.consolidated.impact}</p>}
+              {!!room.checkpoint.consolidated.findings?.length && <>
+                <h4>O que o plantão identificou</h4><ul>{room.checkpoint.consolidated.findings.map((finding, index) => <li key={index}>{finding}</li>)}</ul>
+              </>}
+              {!!room.checkpoint.consolidated.completedActions?.length && <>
+                <h4>Ações relatadas como concluídas</h4><ul>{room.checkpoint.consolidated.completedActions.map((action, index) => <li key={index}>{action}</li>)}</ul>
+              </>}
+              {!!room.checkpoint.consolidated.decisions.length && <>
+                <h4>Decisões</h4><ul>{room.checkpoint.consolidated.decisions.map((decision, index) => <li key={index}>{decision}</li>)}</ul>
+              </>}
+              {!!room.checkpoint.consolidated.actions.length && <>
+                <h4>Próximos passos</h4><ul>{room.checkpoint.consolidated.actions.map((action, index) => <li key={index}>
+                  {action.task}{action.owner && ` · ${action.owner}`}{action.due && ` · ${action.due}`}
+                </li>)}</ul>
+              </>}
+              {!!room.checkpoint.consolidated.pending.length && <>
+                <h4>Pendências</h4><ul>{room.checkpoint.consolidated.pending.map((item, index) => <li key={index}>{item}</li>)}</ul>
+              </>}
+            </div>}
             {room.checkpoint.decision && <p><b>Decisão</b> {room.checkpoint.decision}</p>}
             {room.checkpoint.nextStep && <p><b>Planejamento</b> {room.checkpoint.nextStep}</p>}
             {room.checkpoint.owner && <p><b>Responsável</b> {room.checkpoint.owner}</p>}
-          </div> : <p className="room-detail">Aguardando o primeiro resumo. O agente faz uma atualização a cada dois minutos de chamada operacional.</p>}
+          </div> : <p className="room-detail">Aguardando o primeiro resumo consolidado do plantão.</p>}
           {room.checkpoints.length > 1 && <details className="room-previous">
             <summary>Resumos anteriores</summary>
             <ol className="room-timeline">{room.checkpoints.slice(1).map(item => <li key={item.id}>

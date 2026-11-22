@@ -9,7 +9,6 @@ export type TranscriptLine = {
 
 export type TranscriptSession = {
   close: () => Promise<void>;
-  requestRecap: () => Promise<void>;
 };
 
 type Connection = { appId: string; token: string; channel: string; uid: number; agentUid: number };
@@ -24,7 +23,7 @@ export async function connectTranscript(
   let timer: number | undefined;
 
   async function setup() {
-    const [{ default: AgoraRTM }, { AgoraVoiceAI, AgoraVoiceAIEvents, AgentState, ChatMessagePriority, ChatMessageType, TranscriptHelperMode, TurnStatus }] = await Promise.all([
+    const [{ default: AgoraRTM }, { AgoraVoiceAI, AgoraVoiceAIEvents, AgentState, TranscriptHelperMode, TurnStatus }] = await Promise.all([
       import('agora-rtm'),
       import('agora-agent-client-toolkit'),
     ]);
@@ -67,7 +66,7 @@ export async function connectTranscript(
         turns.forEach((item, index) => {
           const text = typeof item.text === 'string'
             ? item.text.replace(/([.!?,])(?=\p{L})/gu, '$1 ').replace(/\s{2,}/g, ' ').trim() : '';
-          if (!text || text.startsWith('[WARROOM_RECAP]')) return;
+          if (!text) return;
           // UID zero identifies the local speaker in the demo's toolkit.
           const uid = String(item.uid) === '0' ? String(connection.uid) : String(item.uid);
           lines.push({
@@ -84,16 +83,7 @@ export async function connectTranscript(
         if (String(uid) === String(connection.agentUid)) onSpeaking(event.state === AgentState.SPEAKING);
       });
       toolkit.subscribeMessage(connection.channel);
-      const session = toolkit;
-      return {
-        close: disconnect,
-        requestRecap: () => session.sendText(String(connection.agentUid), {
-          messageType: ChatMessageType.TEXT,
-          priority: ChatMessagePriority.APPEND,
-          responseInterruptable: true,
-          text: '[WARROOM_RECAP] Faça o resumo periódico do war room agora: Estado e Planejamento, com fatos e próximos passos da conversa.',
-        }),
-      };
+      return { close: disconnect };
     } catch (error) {
       void disconnect().catch(() => undefined);
       throw error;

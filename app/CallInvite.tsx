@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import { Copy, Phone, Radio } from 'lucide-react';
 
-type Invite = { url: string; expiresAt: number; recipient: { name: string; assigned: boolean } };
+import { callRequest, type CallInvitation } from './call-client';
 
 export function CallInvite({ incidentId }: { incidentId?: number }) {
-  const [invite, setInvite] = useState<Invite>();
+  const [invite, setInvite] = useState<CallInvitation>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -19,14 +19,7 @@ export function CallInvite({ incidentId }: { incidentId?: number }) {
     setError('');
     setBusy(true);
     try {
-      const response = await fetch('/api/calls', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'invite', incidentId, mode: nextMode }),
-        signal: AbortSignal.timeout(25000),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
-      setInvite(result);
+      setInvite(await callRequest<CallInvitation>({ action: 'invite', incidentId, mode: nextMode }));
     } catch (issue) {
       setError(issue instanceof Error ? issue.message : 'Falha ao gerar o link.');
     } finally {

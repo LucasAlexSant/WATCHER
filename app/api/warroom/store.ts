@@ -1,11 +1,13 @@
 import { demoChanges, type ChangeReview } from './change-types';
+import type { ConsolidatedState } from './neuralake';
+import { mergeRollback, rollbackFromSpeech, rollbackLabels, type RollbackUpdate } from './rollback';
 
 export type RoomEvent = {
   id: number;
   at: string;
   payload: {
     namespace: 'sos-warroom';
-    type: 'engineer_report' | 'checkpoint' | 'change_analysis' | 'change_shared';
+    type: 'engineer_report' | 'assistant_turn' | 'checkpoint' | 'change_analysis' | 'change_shared';
     sourceKey: string;
     text?: string;
     summary?: string;
@@ -15,6 +17,9 @@ export type RoomEvent = {
     changes?: ChangeReview[];
     changeId?: string;
     cadence?: 'periodic' | 'manual';
+    provider?: 'neuralake';
+    throughReportId?: number;
+    consolidated?: ConsolidatedState;
   };
 };
 
@@ -65,7 +70,7 @@ export function roomEventHistory(id: number, type: RoomEvent['payload']['type'],
 
 export function cleanText(value: unknown, limit: number) {
   return typeof value === 'string' ? value.trim().slice(0, limit)
-    .replace(/\b(?:sb_secret_|apikey_|sk-)[\w-]+/gi, '[segredo removido]') : '';
+    .replace(/\b(?:sb_secret_|apikey_|nlk[-_]|sk-)[\w-]+/gi, '[segredo removido]') : '';
 }
 
 const writes = new Map<string, Promise<boolean>>();
@@ -123,7 +128,10 @@ export async function roomContext(incident: RoomIncident) {
     { at: incident.resolved_at, type: 'resolução', title: 'Incidente encerrado no painel', detail: 'Registro de resolução da simulação.' },
   ].filter(item => item.at).sort((a, b) => Date.parse(a.at!) - Date.parse(b.at!));
   const [checkpoint] = checkpoints;
-  const reports = reportsNewest.filter(event => !checkpoint || event.id > checkpoint.id).reverse();
+  const rollback = [...reportsNewest].reverse().reduce<RollbackUpdate | undefined>((state, event) =>
+    mergeRollback(state, rollbackFromSpeech(event.payload.text ?? '', event.at)),
+    checkpoints.find(event => event.payload.consolidated?.rollback)?.payload.consolidated?.rollback);
+  const reports = reportsNewest.filter(event => !checkpoint || event.id > (checkpoint.payload.throughReportId ?? checkpoint.id)).reverse();
   return {
     incident: { id: incident.id, title: incident.title, state: incident.state, priority: incident.priority, hypothesis: incident.hypothesis },
     evidence: incident.recommended_params?.evidence,
@@ -131,14 +139,69 @@ export async function roomContext(incident: RoomIncident) {
     historyOnly,
     timeline,
     checkpoint: checkpoint ? { at: checkpoint.at, ...checkpoint.payload } : null,
+    rollback,
     reports: reports.map(event => ({ at: event.at, text: event.payload.text })),
     checkpoints: checkpoints.map(event => ({
       id: event.id, at: event.at, summary: event.payload.summary,
       nextStep: event.payload.nextStep, decision: event.payload.decision, owner: event.payload.owner,
-      cadence: event.payload.cadence,
+      cadence: event.payload.cadence, provider: event.payload.provider, consolidated: event.payload.consolidated,
     })),
     changeCandidates: demoChanges(incident.opened_at),
     changes: analyses[0]?.payload.changes ?? [],
     sharedChanges: shared.flatMap(event => event.payload.changeId ? [event.payload.changeId] : []),
   };
+}
+
+export function briefingContext(room: Awaited<ReturnType<typeof roomContext>>) {
+  const checkpoint = room.checkpoints.find(item => item.provider === 'neuralake') ?? room.checkpoint;
+  const lastAt = checkpoint?.at ?? null;
+  return {
+    incident: room.incident,
+    evidence: room.evidence,
+    timeline: room.timeline,
+    lastConsolidatedAt: lastAt,
+    lastConsolidatedAtBrasilia: lastAt ? new Date(lastAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : null,
+    rollback: room.rollback ? { ...room.rollback, description: rollbackLabels[room.rollback.stage] } : null,
+    checkpoint: checkpoint ? {
+      summary: checkpoint.summary, decision: checkpoint.decision,
+      nextStep: checkpoint.nextStep, owner: checkpoint.owner, consolidated: checkpoint.consolidated,
+    } : null,
+    latestOperationalNote: room.checkpoint && room.checkpoint.at !== lastAt ? {
+      at: room.checkpoint.at, summary: room.checkpoint.summary, decision: room.checkpoint.decision,
+    } : null,
+    unconsolidatedReports: room.reports.length,
+    changeSuspects: room.changes.filter(change => change.label === 'related').slice(0, 4),
+  };
+}
+
+type DirectoryIncident = Pick<RoomIncident, 'id' | 'title' | 'priority' | 'state' | 'opened_at' | 'resolved_at'>;
+
+export async function listWarRooms() {
+  const selection = 'incidents?select=id,title,priority,state,opened_at,resolved_at&service_id=eq.pix-demo&triage_run_id=not.is.null&order=opened_at.desc,id.desc';
+  const [active, resolved] = await Promise.all([
+    database<DirectoryIncident[]>(`${selection}&state=neq.RESOLVED&limit=30`),
+    database<DirectoryIncident[]>(`${selection}&state=eq.RESOLVED&limit=15`),
+  ]);
+  const incidents = [...active, ...resolved];
+  if (!incidents.length) return [];
+  const notes = await database<(RoomEvent & { incident_id: number })[]>(
+    `incident_events?select=incident_id,id,at,payload&incident_id=in.(${incidents.map(item => item.id).join(',')})&payload->>namespace=eq.sos-warroom&payload->>type=eq.checkpoint&order=id.desc&limit=160`,
+  );
+  const latest = new Map<number, RoomEvent>();
+  for (const note of notes) {
+    if (!latest.has(note.incident_id)) latest.set(note.incident_id, note);
+  }
+  return incidents.map(incident => {
+    const note = latest.get(incident.id);
+    return {
+      ...incident,
+      updatedAt: note?.at ?? null,
+      summary: note?.payload.summary ?? null,
+      status: note?.payload.consolidated?.status ?? null,
+      finding: note?.payload.consolidated?.findings?.at(-1) ?? null,
+      completedAction: note?.payload.consolidated?.completedActions?.at(-1) ?? null,
+      rollback: note?.payload.consolidated?.rollback ?? null,
+      nextStep: note?.payload.consolidated?.actions[0]?.task ?? note?.payload.nextStep ?? null,
+    };
+  });
 }
